@@ -1,0 +1,26 @@
+ 
+    Program to generate custom SCP (super check partial) files
+    
+    This is loosely based on the contest-statistics program, although the philosophy is
+    quite different, because here we don't care whether a QSO counts for points: we 
+    just want to try to determine a set of legitimate active calls, regardless of whether
+    other aspects of a logged QSO might be incorrect.
+    
+    drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
+          [-tr call to trace] [-tl lower-limit]
+    
+      -v            be verbose
+      -l <n>        roughly, the number of times that a call must appear in the logs, even after
+                    reasonable precautions have been taken to remove busts. Default 1.
+      -p <n>        the number of directories to process simultaneously. Default 1.
+      -tr <call>    provide detailed information on the processing of a particular logged call
+      -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
+ 
+Notes:
+     
+    If <directory of contest logs> begins with the comat character, then the value, without the
+    leading character, is treaded as a file that contains a list of directories to process, one per line.
+    
+    <directory of contest logs> may list multiple directories, separated by commas.
+    
+    The -l limit is applied independently to each contest and band.
