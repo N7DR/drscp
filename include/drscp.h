@@ -1,4 +1,4 @@
-// $Id: drscp.h 7 2023-01-02 20:19:59Z n7dr $
+// $Id: drscp.h 8 2023-01-05 01:54:07Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -242,7 +242,9 @@ std::unordered_map<std::string /* call */, std::unordered_set<std::string> /* po
     { const std::string& call2 { *it2 };
     
       if (is_bust(call1, call2))
-        rv[call1] += call2;
+      { rv[call1] += call2;
+        rv[call2] += call1;
+      }
     }
   }
   
