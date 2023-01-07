@@ -12,11 +12,6 @@
 
     Program to generate custom SCP (super check partial) files
     
-    This is loosely based on the contest-statistics program, although the philosophy is
-    quite different, because here we don't care whether a QSO counts for points: we 
-    just want to try to determine a set of legitimate active calls, regardless of whether
-    other aspects of a logged QSO might be incorrect.
-    
     drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
           [-tr call to trace] [-tl lower-limit]
     
