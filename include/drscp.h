@@ -78,7 +78,7 @@ protected:
   
   int _qrg { };                     ///< frequency, in kHz
   
-  int _time { };                    ///< time; initially referenced to the epoch, but converted to minutes from the earliest QSO in the contest
+  time_t _time { };                    ///< time; initially referenced to the epoch, but converted to minutes from the earliest QSO in the contest
   int _id;                          ///< unique QSO identifier
   
 public:
@@ -133,7 +133,8 @@ public:
 /*! \brief              Constructor
     \param  qso_fields  fields taken from a line in a Cabrillo file
 */
-small_qso(const std::vector<std::string_view>& qso_fields)
+small_qso(const std::vector<std::string_view>& qso_fields) :
+    _id(qso_id++)
   { if (qso_fields.size() < 9)
     { std::cerr << "ERROR constructing small_qso from short vector" << std::endl;
       exit(-1);
@@ -188,7 +189,7 @@ small_qso(const std::vector<std::string_view>& qso_fields)
 /*! \brief              Constructor
     \param  qso_line    line from a Cabrillo file
 */
-  small_qso(const std::string_view& qso_line)
+  small_qso(std::string_view qso_line)
   { const std::vector<std::string_view> qso_fields { split_string_sv(qso_line, ' ') };  // assumes has already been squashed
   
     *this = small_qso(qso_fields);
@@ -243,7 +244,7 @@ std::unordered_map<std::string /* call */, std::unordered_set<std::string> /* po
     
       if (is_bust(call1, call2))
       { rv[call1] += call2;
-        rv[call2] += call1;
+        rv[call2] += call1;         // busting is symmetrical
       }
     }
   }

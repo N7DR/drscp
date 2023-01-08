@@ -1,4 +1,4 @@
-// $Id: x_error.h 13 2018-12-15 00:34:28Z n7dr $
+// $Id: x_error.h 2 2023-01-07 18:44:13Z n7dr $
 
 #ifndef X_ERROR_H
 #define X_ERROR_H

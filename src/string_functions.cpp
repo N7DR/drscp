@@ -1,4 +1,4 @@
-// $Id: string_functions.cpp 174 2020-11-30 20:28:40Z  $
+// $Id: string_functions.cpp 2 2023-01-07 18:44:13Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -1327,17 +1327,18 @@ vector<string> split_string(const string& cs, const char separator)
     \return             vector containing the separate components
 */
 vector<string_view> split_string_sv(const string& cs, const char separator)
-{ size_t start_posn { 0 };
+{ string_view sv         { cs };
+  size_t      start_posn { 0 };
 
   vector<string_view> rv;
 
-  while (start_posn < cs.length())
-  { if (unsigned long posn { cs.find(separator, start_posn) }; posn == string::npos)                       // no more separators
-    { rv += string_view { cs.substr(start_posn) };
-      start_posn = cs.length();
+  while (start_posn < sv.length())
+  { if (unsigned long posn { sv.find(separator, start_posn) }; posn == string::npos)                       // no more separators
+    { rv += sv.substr(start_posn);
+      start_posn = sv.length();
     }
     else                                            // at least one separator
-    { rv += string_view { cs.substr(start_posn, posn - start_posn) };
+    { rv += sv.substr(start_posn, posn - start_posn);
       start_posn = posn + 1;
     }
   }
@@ -1346,17 +1347,18 @@ vector<string_view> split_string_sv(const string& cs, const char separator)
 }
 
 vector<string_view> split_string_sv(string_view cs, const char separator)
-{ size_t start_posn { 0 };
+{ string_view sv         { cs };
+  size_t      start_posn { 0 };
 
   vector<string_view> rv;
 
-  while (start_posn < cs.length())
-  { if (unsigned long posn { cs.find(separator, start_posn) }; posn == string::npos)                       // no more separators
-    { rv += string_view { cs.substr(start_posn) };
-      start_posn = cs.length();
+  while (start_posn < sv.length())
+  { if (unsigned long posn { sv.find(separator, start_posn) }; posn == string::npos)                       // no more separators
+    { rv += sv.substr(start_posn);
+      start_posn = sv.length();
     }
     else                                            // at least one separator
-    { rv += string_view { cs.substr(start_posn, posn - start_posn) };
+    { rv += sv.substr(start_posn, posn - start_posn);
       start_posn = posn + 1;
     }
   }

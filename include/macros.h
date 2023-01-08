@@ -1,4 +1,4 @@
-// $Id: macros.h 13 2018-12-15 00:34:28Z n7dr $
+// $Id: macros.h 2 2023-01-07 18:44:13Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html

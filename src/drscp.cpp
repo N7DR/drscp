@@ -362,16 +362,16 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
 // look for specific QSO busts, where the frequency and time in two logs match, and an rcall is a bust of a tcall
   unordered_set<int> ids_to_remove;
   
-  const int minimum_minutes { pruned_vec[0].time() };                       // minimum time in this log
-  const int maximum_minutes { pruned_vec[pruned_vec.size() - 1].time() };   // maximum time in this log
+  const time_t minimum_minutes { pruned_vec[0].time() };                       // minimum time in this log
+  const time_t maximum_minutes { pruned_vec[pruned_vec.size() - 1].time() };   // maximum time in this log
 
 // go through the pruned log, minute by minute; start by building maps from times to vector elements
   const vector<vector<small_qso>::const_iterator> all_time_map    { time_map(all_vec, max_time_range) };
   const vector<vector<small_qso>::const_iterator> pruned_time_map { time_map(pruned_vec, max_time_range) };
   
-  for (int target_minutes { minimum_minutes }; target_minutes <= maximum_minutes; ++target_minutes)
-  { const int lower_target_minutes { max(target_minutes - CLOCK_SKEW, minimum_minutes) };
-    const int upper_target_minutes { min(target_minutes + CLOCK_SKEW, maximum_minutes) };
+  for (time_t target_minutes { minimum_minutes }; target_minutes <= maximum_minutes; ++target_minutes)
+  { const time_t lower_target_minutes { max(target_minutes - CLOCK_SKEW, minimum_minutes) };
+    const time_t upper_target_minutes { min(target_minutes + CLOCK_SKEW, maximum_minutes) };
 
 // create vector of (pruned) rcalls that are targets for this exact minute
     vector<small_qso> pruned_rcall_targets;
@@ -568,11 +568,11 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
         const auto [ lb, ub ] { get_bounds(rqso.time(), minimum_minutes, maximum_minutes, RUN_TIME_RANGE, log_of_rcall_and_busts) };
 
         if (verbose or (tracing and (rcall == traced_call)))
-        { const int target_minutes       { rqso.time() };
-          const int lower_target_minutes { max(target_minutes - RUN_TIME_RANGE, minimum_minutes) };
-          const int upper_target_minutes { min(target_minutes + RUN_TIME_RANGE, maximum_minutes) }; 
-          const int low_time             { lb->time() };
-          const int high_time            { prev(ub)->time() }; 
+        { const time_t target_minutes       { rqso.time() };
+          const time_t lower_target_minutes { max(target_minutes - RUN_TIME_RANGE, minimum_minutes) };
+          const time_t upper_target_minutes { min(target_minutes + RUN_TIME_RANGE, maximum_minutes) }; 
+          const time_t low_time             { lb->time() };
+          const time_t high_time            { prev(ub)->time() }; 
         
           cout << band_str << ": time range: " << low_time << " to " << high_time
                << " for target time = " << target_minutes << "; lower target = " << lower_target_minutes << ", upper target = " << upper_target_minutes << endl;
@@ -671,7 +671,10 @@ unordered_set<string> process_directory(const string& dirname)
   for (const string& logfile_name : files_in_directory(dirname, LINKS::INCLUDE))
   { map<string /* tcall */, vector<small_qso>> tcall_qsos;    // do not assume that the tcall doesn't change within the log
 
-    for (const auto& line : to_lines(to_upper(squash(replace_char(read_file(logfile_name), '\t', ' ')))))
+    const string prepared_content { to_upper(squash(replace_char(read_file(logfile_name), '\t', ' '))) }; // force this to be an lvalue
+
+ //   for (const auto& line : to_lines(to_upper(squash(replace_char(read_file(logfile_name), '\t', ' ')))))
+    for (const auto line : to_lines_sv(prepared_content))       // a very minor improvement in efficientcy
     { if (line.starts_with("QSO:"sv))
       { small_qso qso { line };
       
@@ -693,7 +696,7 @@ unordered_set<string> process_directory(const string& dirname)
           continue;
  
         if (tracing and (qso.rcall() == traced_call))
-          cout << "Read traced call from log: " << qso << endl;       
+          cout << "Read traced call from log: " << qso << endl;
 
         tcall_qsos[qso.tcall()] += move(qso);
       }
@@ -873,7 +876,7 @@ unordered_set<string> calls_with_unreliable_freq(const unordered_map<string /* t
         { const auto& [ call, vtf ] { *it };
 
           for (const auto [ rband, rtime, rfreq ] : vtf)
-          { if ( (tband == rband) and abs(ttime - rtime) < RUN_TIME_RANGE )           // within five minutes on the right band
+          { if ( (tband == rband) and (abs(ttime - rtime) < RUN_TIME_RANGE) )           // within five minutes on the right band
             { total++;
             
               if (abs(tfreq - rfreq) < FREQ_SKEW)                               // within 2 kHz
@@ -1003,8 +1006,8 @@ int remove_qsos_outside_contest_period(unordered_map<string /* tcall */, vector<
   do
   {
 // convert all times to to relative minutes, just for human consumption
-    int min_minutes { numeric_limits<int>::max() };
-    int max_minutes { 0 };                                // not really needed, except if verbose
+    time_t min_minutes { numeric_limits<time_t>::max() };
+    time_t max_minutes { 0 };                                // not really needed, except if verbose
 
 // get the global minimum and maximum time
     for (auto& [tcall, qsos] : all_qsos)
@@ -1044,7 +1047,7 @@ int remove_qsos_outside_contest_period(unordered_map<string /* tcall */, vector<
  
 // remove QSOs from either the start or the end   
       for ( const string& tcall : (remove_min ? min_logs : max_logs) )
-      { set<int> ids_to_remove { };
+      { unordered_set<int> ids_to_remove { };
       
         FOR_ALL(all_qsos[tcall], [max_minutes, min_minutes, remove_max, remove_min, &ids_to_remove] (const small_qso& qso)
                                    { if ( remove_min and (qso.time() == 0) )
