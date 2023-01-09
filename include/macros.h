@@ -1,4 +1,4 @@
-// $Id: macros.h 2 2023-01-07 18:44:13Z n7dr $
+// $Id: macros.h 3 2023-01-09 23:36:32Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -1301,6 +1301,10 @@ inline void operator+=(C& sus, T&& element)
   requires (is_sus<C> or is_multiset<C> or is_unordered_multiset<C>) and (std::is_same_v<typename C::value_type, base_type<T>>)
   { sus.insert(std::forward<T>(element)); }
 
+/*! \brief              Add an element to a set, unordered set, multiset or unordered multiset
+    \param  m           destination set or unordered set
+    \param  element     element to insert
+*/
 template <typename C>
 inline void operator+=(C& sus, const typename C::value_type& element)
   requires (is_sus<C> or is_multiset<C> or is_unordered_multiset<C>)
@@ -1311,6 +1315,12 @@ template <typename C, typename T>
 inline void operator+=(C& sus, T&& container)
   requires is_sus<C> and is_vector<T> and (std::is_same_v<base_type<typename C::key_type>, base_type<typename T::value_type> >)
   { std::for_each( container.begin(), container.end(), [&sus](auto&& element) { sus += std::forward<typename T::value_type>(element); } ); }
+
+/// add all the elements of a set or multiset to a multiset
+template <typename C1, typename C2>
+inline void operator+=(C1& sus, const C2& container)
+  requires is_ssuss<C1> and is_ssuss<C2> and (std::is_same_v<base_type<typename C1::value_type>, base_type<typename C2::value_type> >)
+  { std::for_each( container.begin(), container.end(), [&sus] (auto& element) { sus += element; } ); }
 
 /*! \brief              Remove an element from a set, map, unordered set or unordered map
     \param  sus         destination set or unordered set

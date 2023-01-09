@@ -1,4 +1,4 @@
-// $Id: drscp.cpp 8 2023-01-05 01:54:07Z n7dr $
+// $Id: drscp.cpp 3 2023-01-09 23:36:32Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -21,6 +21,7 @@
       -p <n>        the number of directories to process simultaneously. Default 1.
       -tr <call>    provide detailed information on the processing of a particular logged call
       -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
+      -x            generate eXtended SCP output
  
 Notes:
      
@@ -30,6 +31,8 @@ Notes:
     <directory of contest logs> may list multiple directories, separated by commas.
     
     The -l limit is applied independently to each contest and band.
+    
+    Regardless of the value of -tl, entrants' calls must also appear in at least one other log.
 */
 
 #include "command_line.h"
@@ -50,8 +53,6 @@ constinit int TL_LIMIT       { 1 };     ///< do not automatically include entran
 constexpr int CLOCK_SKEW     { 2 };     ///< maximum permitted clock skew when comparing logs, in minutes
 constexpr int FREQ_SKEW      { 2 };     ///< maximum permitted frequency skew when comparing logs, in kHz
 constexpr int RUN_TIME_RANGE { 5 };     ///< half-width of time range for looking for a run, in minutes
-
-using CALL_SET = set<string, decltype(&compare_calls)>;    // set in callsign order
 
 constinit atomic<int> processing_directories { 0 };     ///< number of directories currently being processed
 constinit bool        tracing                { false }; ///< whether -tr option is in use
@@ -127,9 +128,11 @@ int main(int argc, char** argv)
   if (verbose)
     cout << "entrants' calls automatically included only if they claim at least " << TL_LIMIT << ((TL_LIMIT == 1) ? "QSO" : " QSOs") << endl;
 
-  CALL_SET scp_calls(compare_calls);                ///< the list of calls to be output
+  const bool xscp { cl.parameter_present("-x"s) };      // whether to generate XSCP output
 
-  list<future<unordered_set<string>>> futures;
+  CALL_MAP xscp_calls(compare_calls);                   // the calls to be printed
+ 
+  list<future<CALL_MAP>> futures;
  
 // queue all the directories for processing, as resources become available 
   for (const string& dirname : dirnames)
@@ -139,7 +142,7 @@ int main(int argc, char** argv)
     while (processing_directories == MAX_PARALLEL)
     { for (auto it { futures.begin() }; it != futures.end(); ++it)
       { if (it->wait_for(0s) == future_status::ready)               // if a thread has completed
-        { scp_calls += move(it->get());
+        { xscp_calls += move(it->get());
  
           futures.erase(it);
           processing_directories--;
@@ -162,7 +165,7 @@ int main(int argc, char** argv)
   while (!futures.empty())
   { for (auto it { futures.begin() }; it != futures.end(); ++it)
     { if (it->wait_for(0s) == future_status::ready)
-      { scp_calls += move(it->get());
+      { xscp_calls += move(it->get());
         
         futures.erase(it);
         processing_directories--;
@@ -175,8 +178,11 @@ int main(int argc, char** argv)
       this_thread::sleep_for(1s);
   }
     
-// we are finished; output the list of SCP calls, one per line
-  FOR_ALL(scp_calls, [] (const string& call) { cout << call << endl; });
+// we are finished; output the list of [X]SCP calls, one per line
+  if (xscp)
+    FOR_ALL(xscp_calls, [] (const auto& pr) { cout << pr.first << " " << pr.second << endl; });
+  else
+    FOR_ALL(xscp_calls, [] (const auto& pr) { cout << pr.first << endl; });
   
   return 1;
 }
@@ -330,8 +336,8 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
                                    const unordered_map<string /* tcall */, vector<small_qso>>& all_qsos_this_band,
                                    const unordered_set<string>& calls_with_no_freq_info,
                                    const unordered_set<string>& calls_with_poor_freq_info,
-                                   const int max_time_range,
-                                   const unordered_set<string>& scp_calls)
+                                   const int max_time_range/*,
+                                   const unordered_set<string>& scp_calls*/)
 {
 // put all the qsos on this band, and all the pruned qsos, into vectors
   vector<small_qso> pruned_vec { build_vec(pruned_qsos_this_band) };
@@ -619,7 +625,7 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
 
   FOR_ALL(pruned_vec, [&histogram] (const small_qso& qso) { histogram[qso.rcall()]++; });
 
-// remove all the rcalls that are at ore below CUTOFF_LIMIT (default = 1)
+// remove all the rcalls that are at or below CUTOFF_LIMIT (default = 1)
   if (verbose)
     cout << "Erasing calls below CUTOFF_LIMIT ( =" << CUTOFF_LIMIT << " )" << endl;
   
@@ -635,23 +641,15 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
   if (verbose)
     cout << "final number of QSOs in pruned_vec = " << pruned_vec.size() << endl;
 
-// add the remaining rcalls to scp_calls
-  unordered_set<string> local_scp_calls { scp_calls };
+// add the remaining rcalls to local_scp_calls
+  unordered_set<string> local_scp_calls { };
 
   FOR_ALL(pruned_vec, [&local_scp_calls] (const small_qso& qso) { local_scp_calls += qso.rcall(); } );   // NB will try to add many times, but should be fast
 
   if (verbose)
-    cout << "final number of SCP calls = " << local_scp_calls.size() << endl;
-
-  if (verbose)
-  { CALL_SET output_calls(compare_calls);
-  
-    FOR_ALL(local_scp_calls, [&output_calls] (const string& call) { output_calls += call; } );
-    FOR_ALL(local_scp_calls, []              (const string& call) { cout << call << endl; } );
+  { FOR_ALL(local_scp_calls, [] (const string& call) { cout << call << endl; } );
+    cout << band_str << ": final number of SCP calls = " << local_scp_calls.size() << endl;
   }
-
-  if (verbose)
-    cout << "total number of SCP calls = " << local_scp_calls.size() << endl;
   
   return local_scp_calls;
 }
@@ -660,7 +658,7 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
     \param  dirname     the name of the directory to process
     \return             the SCP calls for the logs in directory <i>dirname </i>
 */
-unordered_set<string> process_directory(const string& dirname)
+CALL_MAP process_directory(const string& dirname)
 { unordered_set<string>                                scp_calls;               // the calls in the SCP list
   unordered_map<string /* tcall */, vector<small_qso>> all_qsos;                // all QSOs as recorded in the logs
   unordered_map<string /* tcall */, vector<small_qso>> pruned_qsos;             // some QSOs removed, removing more as we go along
@@ -669,12 +667,11 @@ unordered_set<string> process_directory(const string& dirname)
   const string_view legal_chars { "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890/"sv };  // all the chars that are legal in callsigns
   
   for (const string& logfile_name : files_in_directory(dirname, LINKS::INCLUDE))
-  { map<string /* tcall */, vector<small_qso>> tcall_qsos;    // do not assume that the tcall doesn't change within the log
+  { unordered_map<string /* tcall */, vector<small_qso>> tcall_qsos;    // do not assume that the tcall doesn't change within the log
 
     const string prepared_content { to_upper(squash(replace_char(read_file(logfile_name), '\t', ' '))) }; // force this to be an lvalue
 
- //   for (const auto& line : to_lines(to_upper(squash(replace_char(read_file(logfile_name), '\t', ' ')))))
-    for (const auto line : to_lines_sv(prepared_content))       // a very minor improvement in efficientcy
+    for (const auto line : to_lines_sv(prepared_content))       // a rather minor improvement in efficientcy
     { if (line.starts_with("QSO:"sv))
       { small_qso qso { line };
       
@@ -741,9 +738,17 @@ unordered_set<string> process_directory(const string& dirname)
 // start with the pruned QSOs being identical to all_qsos
   pruned_qsos = all_qsos;
 
-// prune all the QSOs for which the rcall is is a known tcall (regardless of whether anything else matches) 
+// prune all the QSOs for which the rcall is is a known tcall (regardless of whether anything else matches)
+// also put those rcalls into the output map
+  CALL_MAP scp_cm(compare_calls);
+  
   for ( auto& [ tcall, qsos ] : pruned_qsos )
+  { for (const auto& qso : qsos)
+      if (scp_calls.contains(qso.rcall()))
+        scp_cm += qso.rcall();
+        
     erase_if(qsos, [scp_calls] (const small_qso& qso) { return scp_calls.contains(qso.rcall()); } );
+  }
 
   if (verbose)
     cout << dirname << ": nlogs = " << all_qsos.size() << endl;
@@ -808,8 +813,8 @@ unordered_set<string> process_directory(const string& dirname)
   for (const HF_BAND this_band : vector { HF_BAND::B160, HF_BAND::B80, HF_BAND::B40, HF_BAND::B20, HF_BAND::B15, HF_BAND::B10 } )
 //  for (const HF_BAND this_band : vector { HF_BAND::B160 } )
     futures.emplace_back(async(std::launch::async, process_band, ref(pruned_per_band_qsos.at(this_band)), ref(all_per_band_qsos.at(this_band)), ref(calls_with_no_freq_info), 
-                                                                 ref(calls_with_poor_freq_info), max_time_range, ref(scp_calls)));
-
+                                                                 ref(calls_with_poor_freq_info), max_time_range));
+  
   for (int n { 0 }; n < ssize(futures); ++n)
     out_calls += move(futures[n].get());
 
@@ -826,7 +831,19 @@ unordered_set<string> process_directory(const string& dirname)
   if (verbose)
     cout << "Finished processing directory: " << dirname << endl;
   
-  return returned_calls;
+// fill the output map
+  CALL_MAP rv(compare_calls);   // start with the map from tcalls
+  
+  rv += scp_cm;   // start with the map from tcalls
+
+  for (auto& [ tcall, qsos ] : all_qsos)
+  { for (auto& qso : qsos)
+    { if (returned_calls.contains(qso.rcall()))
+        rv += qso.rcall();
+    }
+  }
+    
+  return rv;
 }
 
 /*! \brief                              Return the calls whose logged frequencies seem to be unreliable

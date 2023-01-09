@@ -1,4 +1,4 @@
-// $Id: drscp.h 8 2023-01-05 01:54:07Z n7dr $
+// $Id: drscp.h 3 2023-01-09 23:36:32Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -31,34 +31,45 @@ static const std::vector<std::string> HF_BAND_STR { "160", "80", "40", "20", "15
 
 class small_qso;
 
-// forward declarations
-HF_BAND band_from_qrg(const int qrg);
-auto    build_minilog(const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& qsos_per_call) -> std::unordered_map<HF_BAND, base_type<decltype(qsos_per_call)>>;
+using CALL_MAP = std::map<std::string, int, decltype(&compare_calls)>;      // accumulator in callsign order
+using CALL_SET = std::set<std::string, decltype(&compare_calls)>;           // set in callsign order
 
-//std::unordered_map<int /* time */, std::vector<small_qso>::const_iterator> build_time_map(const std::vector<small_qso>& vec);
+// forward declarations
+HF_BAND                band_from_qrg(const int qrg);
+auto                   build_minilog(const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& qsos_per_call) -> std::unordered_map<HF_BAND, base_type<decltype(qsos_per_call)>>;
 std::vector<small_qso> build_vec(const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& qsos_per_call);
 
 std::unordered_set<std::string> calls_with_unreliable_freq(const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& all_qsos, const std::unordered_set<std::string>& calls_with_no_freq_info);
 
 std::pair<std::vector<small_qso>::const_iterator, std::vector<small_qso>::const_iterator> get_bounds(const int target_minutes, const int minimum_minutes, const int maximum_minutes,
                                                                                                      const int ALLOWED_SKEW, const std::vector<small_qso>& vec);
+                                                                                                     
 bool    is_bust(const std::string& call, const std::string& copied) noexcept;
 bool    is_stn_running(const std::string& call, const int time, const int qrg, const std::unordered_set<std::string>& tcalls, const std::unordered_set<std::string>& calls_with_no_freq_info,
-                      const std::unordered_set<std::string>& calls_with_poor_freq_info, const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& all_qsos_this_band,
-                      const std::vector<small_qso>& all_vec,
-                      const std::vector<std::vector<small_qso>::const_iterator>& all_time_map, const int minimum_minutes, const int maximum_minutes,
-                      const std::string& ignore_call);
+                       const std::unordered_set<std::string>& calls_with_poor_freq_info, const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& all_qsos_this_band,
+                       const std::vector<small_qso>& all_vec,
+                       const std::vector<std::vector<small_qso>::const_iterator>& all_time_map, const int minimum_minutes, const int maximum_minutes,
+                       const std::string& ignore_call);
                       
 std::unordered_set<std::string> process_band(const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& pruned_qsos_this_band,
-                                   const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& all_qsos_this_band,
-                                   const std::unordered_set<std::string>& calls_with_no_freq_info,
-                                   const std::unordered_set<std::string>& calls_with_poor_freq_info,
-                                   const int max_time_range,
-                                   const std::unordered_set<std::string>& scp_calls);
-std::unordered_set<std::string> process_directory(const std::string& dirname);
+                                             const std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& all_qsos_this_band,
+                                             const std::unordered_set<std::string>& calls_with_no_freq_info,
+                                             const std::unordered_set<std::string>& calls_with_poor_freq_info,
+                                             const int max_time_range);
+CALL_MAP                        process_directory(const std::string& dirname);
 
 int remove_qsos_outside_contest_period(std::unordered_map<std::string /* tcall */, std::vector<small_qso>>& all_qsos);
 
+// operators to append to CALL_MAP
+void operator+=(CALL_MAP& cm, const std::unordered_set<std::string>& us)
+  { std::for_each( us.cbegin(), us.cend(), [&cm] (auto& element) { (cm[element])++; } ); }
+
+void operator+=(CALL_MAP& cm, const CALL_MAP& us)
+  { std::for_each( us.cbegin(), us.cend(), [&cm] (auto& pr) { cm[pr.first] += pr.second; } ); }
+
+void operator+=(CALL_MAP& cm, const std::string& call)
+  { (cm[call])++; }
+  
 // -----------  small_qso  ----------------
 
 /*! \class  small_qso
