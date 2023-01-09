@@ -1,4 +1,4 @@
-// $Id: drscp.cpp 3 2023-01-09 23:36:32Z n7dr $
+// $Id: drscp.cpp 4 2023-01-09 23:39:19Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -13,7 +13,7 @@
     Program to generate custom SCP (super check partial) files
     
     drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
-          [-tr call to trace] [-tl lower-limit]
+          [-tr call to trace] [-tl lower-limit] [-x]
     
       -v            be verbose
       -l <n>        roughly, the number of times that a call must appear in the logs, even after

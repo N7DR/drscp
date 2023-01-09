@@ -1,8 +1,8 @@
- 
-    Program to generate custom SCP (super check partial) files
+
+     Program to generate custom SCP (super check partial) files
     
     drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
-          [-tr call to trace] [-tl lower-limit]
+          [-tr call to trace] [-tl lower-limit] [-x]
     
       -v            be verbose
       -l <n>        roughly, the number of times that a call must appear in the logs, even after
@@ -10,6 +10,7 @@
       -p <n>        the number of directories to process simultaneously. Default 1.
       -tr <call>    provide detailed information on the processing of a particular logged call
       -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
+      -x            generate eXtended SCP output
  
 Notes:
      
@@ -19,3 +20,5 @@ Notes:
     <directory of contest logs> may list multiple directories, separated by commas.
     
     The -l limit is applied independently to each contest and band.
+    
+    Regardless of the value of -tl, entrants' calls must also appear in at least one other log.
