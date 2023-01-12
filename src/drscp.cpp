@@ -25,7 +25,7 @@
  
 Notes:
      
-    If <directory of contest logs> begins with the comat character, then the value, without the
+    If <directory of contest logs> begins with the commat character, then the value, without the
     leading character, is treaded as a file that contains a list of directories to process, one per line.
     
     <directory of contest logs> may list multiple directories, separated by commas.
