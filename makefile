@@ -1,6 +1,6 @@
 # makefile for scp
 
-CC = ccache g++
+CC = g++
 CPP = /usr/local/bin/cpp
 LIB = ar
 ASM = as

@@ -1,4 +1,4 @@
-// $Id: drscp.cpp 4 2023-01-09 23:39:19Z n7dr $
+// $Id: drscp.cpp 5 2023-01-14 15:26:12Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -36,6 +36,7 @@ Notes:
 */
 
 #include "command_line.h"
+#include "count_values.h"
 #include "diskfile.h"
 #include "drscp.h"
 #include "macros.h"
@@ -126,7 +127,7 @@ int main(int argc, char** argv)
     TL_LIMIT = from_string<int>(cl.value("-tl"));
 
   if (verbose)
-    cout << "entrants' calls automatically included only if they claim at least " << TL_LIMIT << ((TL_LIMIT == 1) ? "QSO" : " QSOs") << endl;
+    cout << "entrants' calls automatically included only if they claim at least " << TL_LIMIT << ((TL_LIMIT == 1) ? " QSO" : " QSOs") << endl;
 
   const bool xscp { cl.parameter_present("-x"s) };      // whether to generate XSCP output
 
@@ -397,7 +398,7 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
       { ids_to_remove += rqso.id();
         
         if (verbose)
-          cout << "marked for removal: " << rqso << "; tcall match = " << *it << endl;
+          cout << band_str << ": marked for removal: " << rqso << "; tcall match = " << *it << endl;
           
         if (tracing and (rqso.rcall() == traced_call))
           cout << band_str << ": traced call " << traced_call << " marked for removal: " << rqso << "; tcall match = " << *it << endl;
@@ -406,13 +407,13 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
   }
   
   if (verbose)
-    cout << "number of QSO IDs to remove: " << ids_to_remove.size() << endl;
+    cout << band_str << ": number of QSO IDs to remove: " << ids_to_remove.size() << endl;
   
 // remove the marked QSOs
   erase_if(pruned_vec, [&ids_to_remove] (const small_qso& qso) { return ids_to_remove.contains(qso.id()); });
   
   if (verbose)
-    cout << "current number of QSOs in pruned_vec = " << pruned_vec.size() << endl;
+    cout << band_str << ": current number of QSOs in pruned_vec = " << pruned_vec.size() << endl;
 
   if (tracing)
   { int counter { 0 };
@@ -503,21 +504,18 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
     SORT(rcall_log);
   
   if (verbose)
-    cout << "Number of rcall logs = " << rcall_logs.size() << endl;
+    cout << band_str << ": Number of rcall logs = " << rcall_logs.size() << endl;
  
 // this can't be const as [rcall] might create an empty unordered_set later
   unordered_map<string /* call */, unordered_set<string> /* possible_busts */> possible_rcall_busts { possible_busts(rcalls) }; // all the bust permutations in <i>rcalls</i>
 
 // count the number of times each remaining rcall appears
-  map<string /* rcall */, int /* count */> histogram;
-
-  FOR_ALL(pruned_vec, [&histogram] (const small_qso& qso) { histogram[qso.rcall()]++; });
-
-// invert the histogram, in order of greatest count to lowest
-  map<int /* number of QSOs */, set<string> /* rcalls */, greater<int>> inv_histogram;
+  count_values<string> histogram;
   
-  for (auto& [ rcall, count ] : histogram)  // structured binding not permitted in lambda
-    inv_histogram[count] += rcall; 
+  FOR_ALL(pruned_vec, [&histogram] (const small_qso& qso) { histogram += qso.rcall(); });
+
+// invert the histogram, in order of greatest count to least
+  const map<int /* number of QSOs */, set<string> /* rcalls */, greater<int>> inv_histogram { histogram.sorted_invert() };
 
   auto inv_histogram_it { inv_histogram.begin() };
   int  counter          { 0 };
@@ -526,16 +524,16 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
   
   while (inv_histogram_it != inv_histogram.end())
   { if (verbose)
-      cout << counter << " count : " << inv_histogram_it->first << endl;
+      cout << band_str << ": index = " << counter << ", count : " << inv_histogram_it->first << endl;
 
     const set<string> rcalls_this_count { inv_histogram_it->second };
   
     if (verbose)
-      cout << "number of rcalls = " << rcalls_this_count.size() << endl;
+      cout << band_str << ": number of rcalls = " << rcalls_this_count.size() << endl;
   
     for (const auto& rcall : rcalls_this_count)
     { if (verbose)
-        cout << "rcall = " << rcall << endl;
+        cout << band_str << ": rcall = " << rcall << endl;
  
        if (tracing and (rcall == traced_call))
          cout << band_str << ": testing " << rcall << " under inv_histogram count = " << inv_histogram_it->first << endl;
@@ -618,28 +616,29 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
   erase_if(pruned_vec, [&ids_to_remove] (const small_qso& qso) { return ids_to_remove.contains(qso.id()); });
 
   if (verbose)
-    cout << "Number of remaining calls after processing busts for possible runs = " << pruned_vec.size() << endl;
+    cout << band_str << ": Number of remaining calls after processing busts for possible runs = " << pruned_vec.size() << endl;
 
 // regenerate the histogram and remove the calls with too few occurrences
   histogram.clear();
 
-  FOR_ALL(pruned_vec, [&histogram] (const small_qso& qso) { histogram[qso.rcall()]++; });
+  FOR_ALL(pruned_vec, [&histogram] (const small_qso& qso) { histogram += qso.rcall(); });
 
 // remove all the rcalls that are at or below CUTOFF_LIMIT (default = 1)
   if (verbose)
-    cout << "Erasing calls below CUTOFF_LIMIT ( =" << CUTOFF_LIMIT << " )" << endl;
-  
-   for (auto& [ rcall, count ] : histogram)
-   { if (count <= CUTOFF_LIMIT)
-     { if (verbose)
-         cout << "Erasing call: " << rcall << endl;
+  { cout << band_str << ": Erasing calls below CUTOFF_LIMIT ( = " << CUTOFF_LIMIT << " )" << endl;
+
+    for (auto& [ rcall, count ] : histogram)
+    { if (count <= CUTOFF_LIMIT)
+      { cout << band_str << ": Erasing call: " << rcall << endl;
          
-       erase_if(pruned_vec, [rcall] (const small_qso& qso) { return (qso.rcall() == rcall); });
-     }
-   }
-   
-  if (verbose)
-    cout << "final number of QSOs in pruned_vec = " << pruned_vec.size() << endl;
+        erase_if(pruned_vec, [&rcall] (const small_qso& qso) { return (qso.rcall() == rcall); });
+      }
+    }
+    
+    cout << band_str << ": final number of QSOs in pruned_vec = " << pruned_vec.size() << endl;
+  }  
+  else  // not verbose
+    erase_if(pruned_vec, [&histogram] (const small_qso& qso) { return (histogram.at(qso.rcall()) <= CUTOFF_LIMIT); });
 
 // add the remaining rcalls to local_scp_calls
   unordered_set<string> local_scp_calls { };
@@ -820,7 +819,7 @@ CALL_MAP process_directory(const string& dirname)
 
   unordered_set<string> returned_calls;
 
-  FOR_ALL(out_calls, [&returned_calls] (const auto& band_calls) { returned_calls += band_calls; });
+  FOR_ALL(out_calls, [&returned_calls] (const auto& band_calls) { returned_calls += move(band_calls); });
 
   if (verbose)
     cout << "total number of SCP calls = " << returned_calls.size() << endl;
