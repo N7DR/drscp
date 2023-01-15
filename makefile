@@ -29,8 +29,10 @@ PROG = all
 CFLAGS = $(INCL) -D_REENTRANT -c -g3 -O2 -pipe -DLINUX -D_FILE_OFFSET_BITS=64 -fmessage-length=0 -Wno-reorder -fcoroutines -std=c++20
 
 LINKFLAGS =
-	
+
 # command_line.h has no dependencies
+
+# count_values.h has no dependencies
 	
 # diskfile.h has no dependencies
 
@@ -50,7 +52,7 @@ src/command_line.cpp : include/command_line.h
 src/diskfile.cpp : include/diskfile.h include/string_functions.h
 	touch src/diskfile.cpp
 	
-src/drscp.cpp : include/command_line.h include/diskfile.h include/drscp.h include/macros.h include/string_functions.h
+src/drscp.cpp : include/command_line.h include/count_values.h include/diskfile.h include/drscp.h include/macros.h include/string_functions.h
 	touch src/drscp.cpp
 
 src/string_functions.cpp : include/macros.h include/string_functions.h
