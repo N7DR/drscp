@@ -1,8 +1,8 @@
 
-     Program to generate custom SCP (super check partial) files
+    Program to generate custom SCP (super check partial) files
     
     drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
-          [-tr call to trace] [-tl lower-limit] [-x]
+          [-tr call to trace] [-tl lower-limit] [-x] [-xpc %limit]
     
       -v            be verbose
       -l <n>        roughly, the number of times that a call must appear in the logs, even after
@@ -11,7 +11,8 @@
       -tr <call>    provide detailed information on the processing of a particular logged call
       -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
       -x            generate eXtended SCP output
- 
+      -xpc <n>      return only the top n% of most-frequently-seen calls. Default 100.
+
 Notes:
      
     If <directory of contest logs> begins with the commat character, then the value, without the
@@ -22,3 +23,133 @@ Notes:
     The -l limit is applied independently to each contest and band.
     
     Regardless of the value of -tl, entrants' calls must also appear in at least one other log.
+
+    When using the -xpc option, a strict calculation of "top n%" might well fall in the middle of a number of calls
+    with the same number of appearances. In this case, the output includes all calls that appear at least as often
+    as the strict value of "top n%" might suggest.
+
+    The reason for the word "roughly" in the description of the -l option is that considerable effort
+    is taken by the program to remove calls before applying the -l limit.
+
+EXAMPLES:
+
+The following examples were executed on my main desktop machine.
+
+ 1: ~/codelite/drscp/Debug/drscp -dir /zd1/public-logs/cq-ww/cq-ww-ssb-2022-logs
+    Generates a standard SCP file based on the public logs for CQ WW SSB 2022.
+    Execution time: about 4½ minutes.
+    Number of lines of output: 28,672
+
+    Output:
+      AA1AC
+      AA1BF
+      AA1BS
+      AA1DR
+      AA1DR/M
+      ...
+      9Z4FE
+      9Z4FT
+      9Z4KJ
+      9Z4SB
+      9Z4Y
+
+2: ~/codelite/drscp/Debug/drscp -dir /zd1/public-logs/cq-ww/cq-ww-cw-2022-logs -l 5
+    Generates a standard SCP file based on the public logs for CQ WW CW 2022. Each
+      call must appear (roughly) five times in the logs.
+    Execution time: about 2 minutes.
+    Number of lines of output: 12,186
+
+    Output:
+      AA1IA
+      AA1K
+      AA1NK
+      AA1ON
+      AA1QD
+      ...
+      9N7AA
+      9V1HY
+      9V1ZV
+      9Z4A
+      9Z4Y
+
+3: ~/codelite/drscp/Debug/drscp -dir @/zd1/public-logs/dirs -x -p 3
+  Generates an XSCP file based on the public logs named in the file /zd1/public-logs/dirs, processing
+  up to three logs in parallel.
+  Execution time: about 15½ minutes.
+  Number of lines of output: 86,868
+
+The file /zd1/public-logs/dirs contained:
+
+----
+
+/zd1/public-logs/cq-ww/cq-ww-cw-2022-logs
+/zd1/public-logs/cq-ww/cq-ww-ssb-2022-logs
+/zd1/public-logs/iaru/iaru-2022-logs
+/zd1/public-logs/cq-wpx/cq-wpx-cw-2022-logs
+/zd1/public-logs/cq-wpx/cq-wpx-ssb-2022-logs
+/zd1/public-logs/arrl-dx/arrl-dx-ssb-2022-logs
+/zd1/public-logs/arrl-dx/arrl-dx-cw-2022-logs
+/zd1/public-logs/ref/ref-ssb-2022-logs
+/zd1/public-logs/ref/ref-cw-2022-logs
+/zd1/public-logs/cq-ww/cq-ww-cw-2021-logs
+/zd1/public-logs/cq-ww/cq-ww-ssb-2021-logs
+/zd1/public-logs/iaru/iaru-2021-logs
+/zd1/public-logs/cq-wpx/cq-wpx-cw-2021-logs
+/zd1/public-logs/cq-wpx/cq-wpx-ssb-2021-logs
+/zd1/public-logs/arrl-dx/arrl-dx-ssb-2021-logs
+/zd1/public-logs/arrl-dx/arrl-dx-cw-2021-logs
+/zd1/public-logs/ref/ref-ssb-2021-logs
+/zd1/public-logs/ref/ref-cw-2021-logs
+
+----
+
+    Output:
+      AA1A 3
+      AA1AC 217
+      AA1AJ 3
+      AA1BF 3
+      AA1BS 100
+      ...
+      9Z4M 33
+      9Z4P 8
+      9Z4SB 148
+      9Z4UC 8
+      9Z4Y 8677
+
+4: ~/codelite/drscp/Debug/drscp -dir @/zd1/public-logs/dirs -x -p 3 -xpc 95
+  As example 3, except that only the top 95% of calls are included in the output.
+  Execution time: about 15½ minutes.
+  Number of lines of output: 86,763 (see the note above regarding the -xpc option)
+
+    Output:
+      AA1A 3
+      AA1AC 217
+      AA1AJ 3
+      AA1BF 3
+      AA1BS 100
+      ...
+      9Z4M 33
+      9Z4P 8
+      9Z4SB 148
+      9Z4UC 8
+      9Z4Y 8677
+
+5: ~/codelite/drscp/Debug/drscp -dir @/zd1/public-logs/dirs -x -p 3 -xpc 80
+  As example 4, except that only the top 80% of calls are included in the output.
+  Execution time: about 15½ minutes.
+  Number of lines of output: 73,056 (see the note above regarding the -xpc option)
+
+    Output:
+      AA1AC 217
+      AA1BS 100
+      AA1BU 254
+      AA1CJ 12
+      AA1DR 115
+      ...
+      9Z4M 33
+      9Z4P 8
+      9Z4SB 148
+      9Z4UC 8
+      9Z4Y 8677
+
+

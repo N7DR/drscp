@@ -1,4 +1,4 @@
-// $Id: count_values.h 5 2023-01-14 15:26:12Z n7dr $
+// $Id: count_values.h 6 2023-02-02 20:24:54Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -83,9 +83,10 @@ public:
     return rv;
   }
 
-/// invert, so that the count is the key into a set of values 
-  std::map<U, std::set<T>, std::greater<U>> sorted_invert(void) const
-  { std::map<U, std::set<T>, std::greater<U>> rv { };
+/// invert, so that the count is the key into a container of values 
+  template <typename OUTVALUES, typename OUTSORT = std::less<U>>
+  auto sorted_invert(void) const -> std::map<U, OUTVALUES, OUTSORT>
+  { std::map<U, OUTVALUES, OUTSORT> rv { };
  
     for (const auto& [ value, n ] : std::unordered_map<T, U>(*this))
       rv[n] += value; 

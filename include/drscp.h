@@ -1,4 +1,4 @@
-// $Id: drscp.h 3 2023-01-09 23:36:32Z n7dr $
+// $Id: drscp.h 6 2023-02-02 20:24:54Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -89,10 +89,12 @@ protected:
   
   int _qrg { };                     ///< frequency, in kHz
   
-  time_t _time { };                    ///< time; initially referenced to the epoch, but converted to minutes from the earliest QSO in the contest
+  time_t _time { };                 ///< time; initially referenced to the epoch, but converted to minutes from the earliest QSO in the contest
   int _id;                          ///< unique QSO identifier
   
 public:
+
+  small_qso(void) = default;        // provide default constructor; used only when encountering an error during construction
 
 /*! \brief              Constructor
     \param  qso_fields  fields taken from a line in a Cabrillo file
@@ -101,7 +103,10 @@ public:
     _id(qso_id++)
   { if (qso_fields.size() < 9)
     { std::cerr << "ERROR constructing small_qso from short vector" << std::endl;
-      exit(-1);
+ //     exit(-1);
+ 
+      *this = small_qso { };
+      return;
     }
     
     _qrg = from_string<int>(qso_fields[1]);
@@ -129,15 +134,17 @@ public:
     _time = t_of_day;
  
     if (_time < 0)                      // ERROR
-    { std::cout << t.tm_year << " | " << t.tm_mon << " | " << t.tm_mday << " | " << t.tm_hour << " | " << t.tm_min << " => " << t_of_day << " or " << _time << std::endl;
+    { std::cerr << t.tm_year << " | " << t.tm_mon << " | " << t.tm_mday << " | " << t.tm_hour << " | " << t.tm_min << " => " << t_of_day << " or " << _time << std::endl;
       
-      std::cout << "dat = " << dat << std::endl;
-      std::cout << "utc = " << utc << std::endl;
+      std::cerr << "dat = " << dat << std::endl;
+      std::cerr << "utc = " << utc << std::endl;
       
       for (const std::string& field : qso_fields)
-        std::cout << field << std::endl;
-      
-      exit(-1);
+        std::cerr << field << std::endl;
+
+      *this = small_qso { };
+      return;      
+//      exit(-1);
     } 
   }
 
@@ -148,15 +155,75 @@ small_qso(const std::vector<std::string_view>& qso_fields) :
     _id(qso_id++)
   { if (qso_fields.size() < 9)
     { std::cerr << "ERROR constructing small_qso from short vector" << std::endl;
-      exit(-1);
+ 
+      *this = small_qso { };
+      return;
     }
     
     _qrg = from_string<int>(std::string { qso_fields[1] });
     _tcall = qso_fields[5];
     _rcall = qso_fields[8];
-    _band = band_from_qrg(_qrg);
+    
+    if (!contains_letter(_tcall))
+    { std::cerr << "tcall does not contain letter: ";
+    
+      for (const auto& field : qso_fields)
+        std::cerr << field << " ";
+      std::cerr << std::endl;
       
-// as we don't yet have proper support for date/time, all we need is a fake
+      *this = small_qso { };
+      return;
+    }
+
+    if (!contains_digit(_tcall))
+    { std::cerr << "tcall does not contain digit: ";
+    
+      for (const auto& field : qso_fields)
+        std::cerr << field << " ";
+      std::cerr << std::endl;
+      
+      *this = small_qso { };
+      return;
+    }
+
+    if (!contains_letter(_rcall))
+    { std::cerr << "rcall does not contain letter: ";
+    
+      for (const auto& field : qso_fields)
+        std::cerr << field << " ";
+      std::cerr << std::endl;
+      
+      *this = small_qso { };
+      return;
+    }
+
+    if (!contains_digit(_rcall))
+    { std::cerr << "rcall does not contain digit: ";
+    
+      for (const auto& field : qso_fields)
+        std::cerr << field << " ";
+      std::cerr << std::endl;
+      
+      *this = small_qso { };
+      return;
+    }
+    
+    try
+    { _band = band_from_qrg(_qrg);
+    }
+    
+    catch (...)
+    { std::cerr << "Error in data: ";
+      
+      for (const auto& field : qso_fields)
+        std::cerr << field << " ";
+      std::cerr << std::endl;
+ 
+      *this = small_qso { };
+      return;
+    }
+      
+// as we don't yet have proper support for date/time in g++, all we need is a fake
 // counter that advances by one per minute for the duration of a contest
     struct tm t { };
     time_t t_of_day { };
@@ -175,16 +242,20 @@ small_qso(const std::vector<std::string_view>& qso_fields) :
     
     _time = t_of_day;
  
-    if (_time < 0)
-    { std::cout << t.tm_year << " | " << t.tm_mon << " | " << t.tm_mday << " | " << t.tm_hour << " | " << t.tm_min << " => " << t_of_day << " or " << _time << std::endl;
+    if ( (_time < 0) or (t.tm_year < 105) or (t.tm_year > 125) )
+    { //std::cerr << t.tm_year << " | " << t.tm_mon << " | " << t.tm_mday << " | " << t.tm_hour << " | " << t.tm_min << " => " << t_of_day << " or " << _time << std::endl;
       
-      std::cout << "dat = " << dat << std::endl;
-      std::cout << "utc = " << utc << std::endl;
+      //std::cerr << "dat = " << dat << std::endl;
+      //std::cerr << "utc = " << utc << std::endl;
+      
+      std::cerr << "Error in data: ";
       
       for (const auto& field : qso_fields)
-        std::cout << field << std::endl;
-      
-      exit(-1);
+        std::cerr << field << " ";
+      std::cerr << std::endl;
+ 
+      *this = small_qso { };
+      return;
     } 
   }
 

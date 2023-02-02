@@ -1,4 +1,4 @@
-// $Id: macros.h 3 2023-01-09 23:36:32Z n7dr $
+// $Id: macros.h 6 2023-02-02 20:24:54Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -1858,6 +1858,36 @@ std::vector<T> PAIRWISE_SUM(const std::vector<T>& v1, const std::vector<T>& v2)
     rv += v1[idx] + v2[idx];
     
   return rv;
+}
+
+/*! \brief  Given a container of values, return the value at a given percentage point in an ordered sequence
+    \param  values  container of values
+    \param  pc      percentage point
+    \return         the value at the <i>pc</i>th percentage point
+*/
+template <typename C>
+typename C::value_type value_line(const C& values, const int pc)
+{ if (values.empty())
+    return std::numeric_limits<typename C::value_type>::max();
+
+  std::vector<typename C::value_type> ordered_vector;
+  ordered_vector.reserve(values.size());
+
+  FOR_ALL(values, [&ordered_vector] (const auto& v) { ordered_vector += v; });
+
+  SORT(ordered_vector);
+
+  const int clamped_pc { std::clamp(pc, 0, 100) };
+
+  if (clamped_pc == 100)
+    return (ordered_vector[0]);     // all match
+
+  if (clamped_pc == 0)
+    return ordered_vector[ordered_vector.size() + 1];   // none match
+
+  const size_t idx { static_cast<size_t>((values.size() * (100 - static_cast<float>(clamped_pc)) / 100) + 0.5) };
+
+  return ordered_vector.at(idx);
 }
 
 #endif    // MACROS_H

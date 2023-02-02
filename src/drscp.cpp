@@ -1,4 +1,4 @@
-// $Id: drscp.cpp 5 2023-01-14 15:26:12Z n7dr $
+// $Id: drscp.cpp 6 2023-02-02 20:24:54Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -22,6 +22,7 @@
       -tr <call>    provide detailed information on the processing of a particular logged call
       -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
       -x            generate eXtended SCP output
+      -xpc <n>      return only the top n% of most-frequently-seen calls. Default 100.
  
 Notes:
      
@@ -33,6 +34,10 @@ Notes:
     The -l limit is applied independently to each contest and band.
     
     Regardless of the value of -tl, entrants' calls must also appear in at least one other log.
+    
+    When using the -xscp option, a strict calculation of "top n%" might well fall in the middle of a number of calls
+    with the same number of appearances. In this case, the output includes all calls that appear at least as often
+    as the strict value of "top n%" might suggest. 
 */
 
 #include "command_line.h"
@@ -50,6 +55,7 @@ using namespace std;
 constinit int CUTOFF_LIMIT   { 1 };     ///< will remove calls that appear this many (or fewer) times
 constinit int MAX_PARALLEL   { 1 };     ///< maximum number of directories to process at once
 constinit int TL_LIMIT       { 1 };     ///< do not automatically include entrants' calls unless they claim at least this number of QSOs
+constinit int PC_OUTPUT      { 100 };   ///< percentage of calls to return
 
 constexpr int CLOCK_SKEW     { 2 };     ///< maximum permitted clock skew when comparing logs, in minutes
 constexpr int FREQ_SKEW      { 2 };     ///< maximum permitted frequency skew when comparing logs, in kHz
@@ -131,6 +137,16 @@ int main(int argc, char** argv)
 
   const bool xscp { cl.parameter_present("-x"s) };      // whether to generate XSCP output
 
+  if (verbose)
+    cout << "output format is: " << (xscp ? "XSCP" : "SCP") << endl;
+    
+  if (cl.value_present("-xpc"s))
+  { PC_OUTPUT = from_string<int>(cl.value("-xpc"));
+  
+    if (verbose)
+      cout << "top " << PC_OUTPUT << " of values will be returned" << endl;
+  }
+  
   CALL_MAP xscp_calls(compare_calls);                   // the calls to be printed
  
   list<future<CALL_MAP>> futures;
@@ -178,7 +194,19 @@ int main(int argc, char** argv)
     if (!futures.empty())
       this_thread::sleep_for(1s);
   }
+
+// possibly prune the list for output
+  if (PC_OUTPUT != 100)
+  { vector<int> values;
+    values.reserve(xscp_calls.size());
     
+    FOR_ALL(xscp_calls, [&values] (const auto& pr) { values += pr.second; });
+    
+//    const int val_limit { value_line(values, PC_OUTPUT) };
+    
+    erase_if(xscp_calls, [val_limit = value_line(values, PC_OUTPUT)] (const auto& pr) { return (pr.second < val_limit); });
+  }
+
 // we are finished; output the list of [X]SCP calls, one per line
   if (xscp)
     FOR_ALL(xscp_calls, [] (const auto& pr) { cout << pr.first << " " << pr.second << endl; });
@@ -339,7 +367,7 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
                                    const unordered_set<string>& calls_with_poor_freq_info,
                                    const int max_time_range/*,
                                    const unordered_set<string>& scp_calls*/)
-{
+{ 
 // put all the qsos on this band, and all the pruned qsos, into vectors
   vector<small_qso> pruned_vec { build_vec(pruned_qsos_this_band) };
 
@@ -515,8 +543,8 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
   FOR_ALL(pruned_vec, [&histogram] (const small_qso& qso) { histogram += qso.rcall(); });
 
 // invert the histogram, in order of greatest count to least
-  const map<int /* number of QSOs */, set<string> /* rcalls */, greater<int>> inv_histogram { histogram.sorted_invert() };
-
+  const auto inv_histogram { histogram.sorted_invert<set<string>, greater<int>>() };
+  
   auto inv_histogram_it { inv_histogram.begin() };
   int  counter          { 0 };
   
@@ -674,27 +702,29 @@ CALL_MAP process_directory(const string& dirname)
     { if (line.starts_with("QSO:"sv))
       { small_qso qso { line };
       
-        qso.tcall(remove_from_end(qso.tcall(), "/QRP"s));   // obviously
-        qso.rcall(remove_from_end(qso.rcall(), "/QRP"s));   //    do.
-        qso.tcall(remove_from_end(qso.tcall(), "/QRPP"s));  // yup... some people do this
-        qso.rcall(remove_from_end(qso.rcall(), "/QRPP"s));
+        if (!qso.tcall().empty())                               // if we successfully constructed a valid QSO
+        { qso.tcall(remove_from_end(qso.tcall(), "/QRP"s));     // obviously
+          qso.rcall(remove_from_end(qso.rcall(), "/QRP"s));     //    do.
+          qso.tcall(remove_from_end(qso.tcall(), "/QRPP"s));    // yup... some people do this
+          qso.rcall(remove_from_end(qso.rcall(), "/QRPP"s));
 
-        const string_view qt { qso.tcall() };
-        const string_view qr { qso.rcall() };
+          const string_view qt { qso.tcall() };
+          const string_view qr { qso.rcall() };
         
-        if ((qt.size() < 3) or (qr.size() < 3))
-          continue;
+          if ((qt.size() < 3) or (qr.size() < 3))
+            continue;
 
-        if ( (qt.find_first_not_of(legal_chars) != string::npos) or (qr.find_first_not_of(legal_chars) != string::npos) )
-          continue;
+          if ( (qt.find_first_not_of(legal_chars) != string::npos) or (qr.find_first_not_of(legal_chars) != string::npos) )
+            continue;
           
-        if (qso.tcall() == qso.rcall())                     // some people "work themselves" to mark bad QSOs but to keep serial numbers intact
-          continue;
+          if (qso.tcall() == qso.rcall())                     // some people "work themselves" to mark bad QSOs but to keep serial numbers intact
+            continue;
  
-        if (tracing and (qso.rcall() == traced_call))
-          cout << "Read traced call from log: " << qso << endl;
+          if (tracing and (qso.rcall() == traced_call))
+            cout << "Read traced call from log: " << qso << endl;
 
-        tcall_qsos[qso.tcall()] += move(qso);
+          tcall_qsos[qso.tcall()] += move(qso);
+        }
       }
     }
 
@@ -808,11 +838,11 @@ CALL_MAP process_directory(const string& dirname)
 
   vector<future<unordered_set<string>>> futures;
   vector<unordered_set<string>>         out_calls;
-  
+
   for (const HF_BAND this_band : vector { HF_BAND::B160, HF_BAND::B80, HF_BAND::B40, HF_BAND::B20, HF_BAND::B15, HF_BAND::B10 } )
-//  for (const HF_BAND this_band : vector { HF_BAND::B160 } )
-    futures.emplace_back(async(std::launch::async, process_band, ref(pruned_per_band_qsos.at(this_band)), ref(all_per_band_qsos.at(this_band)), ref(calls_with_no_freq_info), 
-                                                                 ref(calls_with_poor_freq_info), max_time_range));
+    if (pruned_per_band_qsos.contains(this_band) and all_per_band_qsos.contains(this_band))                         // not every contest permits every band
+      futures.emplace_back(async(std::launch::async, process_band, ref(pruned_per_band_qsos.at(this_band)), ref(all_per_band_qsos.at(this_band)), ref(calls_with_no_freq_info), 
+                                                                   ref(calls_with_poor_freq_info), max_time_range));
   
   for (int n { 0 }; n < ssize(futures); ++n)
     out_calls += move(futures[n].get());
@@ -924,7 +954,7 @@ unordered_set<string> calls_with_unreliable_freq(const unordered_map<string /* t
     \param  qrg     frequency, in kHz
     \return         the band in which the frequency <i>qrg</i> lies
     
-    Prints an error and exits the program if <i>qrg</i> does not appear to be in a contest band
+    Throws an exception if <i>qrg</i> does not appear to be in a contest band
 */
 HF_BAND band_from_qrg(const int qrg)
 { if ((qrg >= 1800) and (qrg <= 2000))
@@ -945,8 +975,10 @@ HF_BAND band_from_qrg(const int qrg)
   if ((qrg >= 28000) and (qrg <= 29700))
     return HF_BAND::B10;
       
-  cerr << "ERROR: invalid frequency: " << qrg << endl;
-  exit(-1);
+//  cerr << "ERROR: invalid frequency: " << qrg << endl;
+//  exit(-1);
+//  cerr << "ERROR: invalid frequency: " << qrg << endl;
+  throw exception();
 }
 
 /*! \brief                              Determine whether a station is running at a particular time and on a particular frequency
@@ -1035,9 +1067,13 @@ int remove_qsos_outside_contest_period(unordered_map<string /* tcall */, vector<
       FOR_ALL(qsos, [min_minutes] (small_qso& qso) { qso.time(qso.time() - min_minutes); } );
 
     time_range = max_minutes - min_minutes + 1;
+
+    if (time_range < 2500)      // assume one day if not two days; change this if contests with weird durations are added
+    { MAX_TIME_RANGE = 1800;    // 30 hours; e.g. REF
     
-    if (time_range < 2000)      // assume one day if not two days; change this if contests with weird durations are added
-      MAX_TIME_RANGE = 1440;
+      if (time_range < 1700)
+        MAX_TIME_RANGE = 1440;
+    }
   
     if (time_range > MAX_TIME_RANGE)
     { int n_at_minimum { 0 };
