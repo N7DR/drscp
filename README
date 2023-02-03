@@ -2,7 +2,7 @@
     Program to generate custom SCP (super check partial) files
     
     drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
-          [-tr call to trace] [-tl lower-limit] [-x] [-xpc %limit]
+          [-tr call to trace] [-tl lower-limit] [-x] [-xpc %limit] [-i]
     
       -v            be verbose
       -l <n>        roughly, the number of times that a call must appear in the logs, even after
@@ -12,6 +12,7 @@
       -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
       -x            generate eXtended SCP output
       -xpc <n>      return only the top n% of most-frequently-seen calls. Default 100.
+      -i            display erroneous QSO lines from logs on the standard error stream
 
 Notes:
      

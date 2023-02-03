@@ -1,4 +1,4 @@
-// $Id: drscp.h 6 2023-02-02 20:24:54Z n7dr $
+// $Id: drscp.h 7 2023-02-03 17:28:36Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -18,6 +18,8 @@
 
 #include "string_functions.h"
 
+extern bool DISPLAY_BAD_QSOS;
+
 enum class HF_BAND { B160 = 0,
                      B80,
                      B40,
@@ -27,7 +29,7 @@ enum class HF_BAND { B160 = 0,
                      BAD
                    };
 
-static const std::vector<std::string> HF_BAND_STR { "160", "80", "40", "20", "15", "10", "BAD" };
+static const std::vector<std::string> HF_BAND_STR { "160"s, "80"s, "40"s, "20"s, "15"s, "10"s, "BAD"s };
 
 class small_qso;
 
@@ -96,6 +98,7 @@ public:
 
   small_qso(void) = default;        // provide default constructor; used only when encountering an error during construction
 
+#if 0
 /*! \brief              Constructor
     \param  qso_fields  fields taken from a line in a Cabrillo file
 */
@@ -103,7 +106,6 @@ public:
     _id(qso_id++)
   { if (qso_fields.size() < 9)
     { std::cerr << "ERROR constructing small_qso from short vector" << std::endl;
- //     exit(-1);
  
       *this = small_qso { };
       return;
@@ -147,16 +149,27 @@ public:
 //      exit(-1);
     } 
   }
+#endif
 
 /*! \brief              Constructor
     \param  qso_fields  fields taken from a line in a Cabrillo file
 */
 small_qso(const std::vector<std::string_view>& qso_fields) :
     _id(qso_id++)
-  { if (qso_fields.size() < 9)
-    { std::cerr << "ERROR constructing small_qso from short vector" << std::endl;
- 
-      *this = small_qso { };
+  { auto process_error = [qso_fields, this] (const std::string& msg)
+      { if (DISPLAY_BAD_QSOS)
+        { std::cerr << msg << ": ";
+      
+          for (const auto& field : qso_fields)
+            std::cerr << field << " ";
+          std::cerr << std::endl;
+        }
+      
+        *this = small_qso { };
+      };
+    
+    if (qso_fields.size() < 9)
+    { process_error("ERROR constructing small_qso from short vector");
       return;
     }
     
@@ -165,46 +178,22 @@ small_qso(const std::vector<std::string_view>& qso_fields) :
     _rcall = qso_fields[8];
     
     if (!contains_letter(_tcall))
-    { std::cerr << "tcall does not contain letter: ";
-    
-      for (const auto& field : qso_fields)
-        std::cerr << field << " ";
-      std::cerr << std::endl;
-      
-      *this = small_qso { };
+    { process_error("tcall does not contain letter");
       return;
     }
 
     if (!contains_digit(_tcall))
-    { std::cerr << "tcall does not contain digit: ";
-    
-      for (const auto& field : qso_fields)
-        std::cerr << field << " ";
-      std::cerr << std::endl;
-      
-      *this = small_qso { };
+    { process_error("tcall does not contain digit");
       return;
     }
 
     if (!contains_letter(_rcall))
-    { std::cerr << "rcall does not contain letter: ";
-    
-      for (const auto& field : qso_fields)
-        std::cerr << field << " ";
-      std::cerr << std::endl;
-      
-      *this = small_qso { };
+    { process_error("rcall does not contain letter");
       return;
     }
 
     if (!contains_digit(_rcall))
-    { std::cerr << "rcall does not contain digit: ";
-    
-      for (const auto& field : qso_fields)
-        std::cerr << field << " ";
-      std::cerr << std::endl;
-      
-      *this = small_qso { };
+    { process_error("rcall does not contain digit");
       return;
     }
     
@@ -213,13 +202,7 @@ small_qso(const std::vector<std::string_view>& qso_fields) :
     }
     
     catch (...)
-    { std::cerr << "Error in data: ";
-      
-      for (const auto& field : qso_fields)
-        std::cerr << field << " ";
-      std::cerr << std::endl;
- 
-      *this = small_qso { };
+    { process_error("error in frequency");
       return;
     }
       
@@ -243,18 +226,7 @@ small_qso(const std::vector<std::string_view>& qso_fields) :
     _time = t_of_day;
  
     if ( (_time < 0) or (t.tm_year < 105) or (t.tm_year > 125) )
-    { //std::cerr << t.tm_year << " | " << t.tm_mon << " | " << t.tm_mday << " | " << t.tm_hour << " | " << t.tm_min << " => " << t_of_day << " or " << _time << std::endl;
-      
-      //std::cerr << "dat = " << dat << std::endl;
-      //std::cerr << "utc = " << utc << std::endl;
-      
-      std::cerr << "Error in data: ";
-      
-      for (const auto& field : qso_fields)
-        std::cerr << field << " ";
-      std::cerr << std::endl;
- 
-      *this = small_qso { };
+    { process_error("error in date/time");
       return;
     } 
   }
@@ -262,11 +234,13 @@ small_qso(const std::vector<std::string_view>& qso_fields) :
 /*! \brief              Constructor
     \param  qso_line    line from a Cabrillo file
 */
+#if 0
   small_qso(const std::string& qso_line)
   { const std::vector<std::string> qso_fields { split_string(qso_line, ' ') };  // assumes has already been squashed
   
     *this = small_qso(qso_fields);
   }
+#endif
 
 /*! \brief              Constructor
     \param  qso_line    line from a Cabrillo file

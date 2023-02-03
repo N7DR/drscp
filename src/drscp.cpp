@@ -1,4 +1,4 @@
-// $Id: drscp.cpp 6 2023-02-02 20:24:54Z n7dr $
+// $Id: drscp.cpp 7 2023-02-03 17:28:36Z n7dr $
 
 // Released under the GNU Public License, version 2
 //   see: https://www.gnu.org/licenses/gpl-2.0.html
@@ -13,7 +13,7 @@
     Program to generate custom SCP (super check partial) files
     
     drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
-          [-tr call to trace] [-tl lower-limit] [-x]
+          [-tr call to trace] [-tl lower-limit] [-x] [-i]
     
       -v            be verbose
       -l <n>        roughly, the number of times that a call must appear in the logs, even after
@@ -23,6 +23,7 @@
       -tl <n>       do not automatically include entrants' calls unless they claim at least n QSOs. Default 1.
       -x            generate eXtended SCP output
       -xpc <n>      return only the top n% of most-frequently-seen calls. Default 100.
+      -i            display erroneous QSO lines from logs on the standard error stream
  
 Notes:
      
@@ -35,7 +36,7 @@ Notes:
     
     Regardless of the value of -tl, entrants' calls must also appear in at least one other log.
     
-    When using the -xscp option, a strict calculation of "top n%" might well fall in the middle of a number of calls
+    When using the -xpc option, a strict calculation of "top n%" might well fall in the middle of a number of calls
     with the same number of appearances. In this case, the output includes all calls that appear at least as often
     as the strict value of "top n%" might suggest. 
 */
@@ -52,10 +53,11 @@ Notes:
 
 using namespace std;
 
-constinit int CUTOFF_LIMIT   { 1 };     ///< will remove calls that appear this many (or fewer) times
-constinit int MAX_PARALLEL   { 1 };     ///< maximum number of directories to process at once
-constinit int TL_LIMIT       { 1 };     ///< do not automatically include entrants' calls unless they claim at least this number of QSOs
-constinit int PC_OUTPUT      { 100 };   ///< percentage of calls to return
+constinit int  CUTOFF_LIMIT     { 1 };      ///< will remove calls that appear this many (or fewer) times
+constinit int  MAX_PARALLEL     { 1 };      ///< maximum number of directories to process at once
+constinit int  TL_LIMIT         { 1 };      ///< do not automatically include entrants' calls unless they claim at least this number of QSOs
+constinit int  PC_OUTPUT        { 100 };    ///< percentage of calls to return
+constinit bool DISPLAY_BAD_QSOS { false };  ///< whether to display bad QSOs from logs on cerr
 
 constexpr int CLOCK_SKEW     { 2 };     ///< maximum permitted clock skew when comparing logs, in minutes
 constexpr int FREQ_SKEW      { 2 };     ///< maximum permitted frequency skew when comparing logs, in kHz
@@ -147,6 +149,8 @@ int main(int argc, char** argv)
       cout << "top " << PC_OUTPUT << " of values will be returned" << endl;
   }
   
+  DISPLAY_BAD_QSOS = cl.parameter_present("-i"s);       // whether to print bad QSOs from logs
+  
   CALL_MAP xscp_calls(compare_calls);                   // the calls to be printed
  
   list<future<CALL_MAP>> futures;
@@ -201,8 +205,6 @@ int main(int argc, char** argv)
     values.reserve(xscp_calls.size());
     
     FOR_ALL(xscp_calls, [&values] (const auto& pr) { values += pr.second; });
-    
-//    const int val_limit { value_line(values, PC_OUTPUT) };
     
     erase_if(xscp_calls, [val_limit = value_line(values, PC_OUTPUT)] (const auto& pr) { return (pr.second < val_limit); });
   }
