@@ -12,9 +12,12 @@
 
     Program to generate custom SCP (super check partial) files
     
-    drscp -dir <directory of contest logs> [-v] [-l cutoff-count] [-p parallel-number]
+    drscp -dir <directory of contest logs> [-start <start date/time>] [-hrs <duration in hours>]
+          [-v] [-l cutoff-count] [-p parallel-number]
           [-tr call to trace] [-tl lower-limit] [-x] [-i]
     
+      -start        date/time of the start of the contest: YYYY-MM-DD[THH[:MM[:SS]]]
+      -hrs          duration of the contest, in hours
       -v            be verbose
       -l <n>        roughly, the number of times that a call must appear in the logs, even after
                     reasonable precautions have been taken to remove busts. Default 1.
@@ -26,11 +29,16 @@
       -i            display erroneous QSO lines from logs on the standard error stream
  
 Notes:
-     
-    If <directory of contest logs> begins with the commat character, then the value, without the
-    leading character, is treaded as a file that contains a list of directories to process, one per line.
     
-    <directory of contest logs> may list multiple directories, separated by commas.
+    Each contest requires three values: the name of the directory holding the logs,
+    the date/time of the start of the contest, and the contest duration, in hours
+    
+    If drscp is used to process a single contest, then the latter two values may be specified with the
+    -start and -hrs parameters respectively.
+    
+    If <directory of contest logs> begins with the commat character, then the value, without the
+    leading character, is treaded as a file that contains a list of space-separated directories,
+    start times and durations to process, one contest per line. See the README file for examples.
     
     The -l limit is applied independently to each contest and band.
     
@@ -84,12 +92,11 @@ int main(int argc, char** argv)
 
   vector<string> dirnames;
 
-  if (contains(rawdirname, ","))
-    dirnames = remove_peripheral_spaces(split_string(rawdirname));
-  else
-    dirnames += rawdirname;         // just one directory
+  dirnames += rawdirname;         // just one directory
 
-  if ( (dirnames.size() == 1) and dirnames[0].starts_with('@') )
+  vector<contest_parameters> params_vec { };
+
+  if (dirnames[0].starts_with('@'))
   { const string filename { substring(dirnames[0], 1) };
   
     if (!file_exists(filename))
@@ -102,14 +109,29 @@ int main(int argc, char** argv)
     dirnames.clear();
     
     for (const auto& line : lines)
-    { if (!line.empty() and !line.starts_with('#'))
+    { if (!line.empty() and !line.starts_with('#') and !contains(line, ' '))
         dirnames += line;
+      if (!line.empty() and !line.starts_with('#') and contains(line, ' '))
+        params_vec += contest_parameters { line };
     }
   }
+  else      // an actual directory
+  { if (!cl.value_present("-start"))
+    { cerr << "ERROR: missing -start parameter" << endl;
+      exit(-1);
+    }
+    
+    if (!cl.value_present("-hrs"))
+    { cerr << "ERROR: missing -hrs parameter" << endl;
+      exit(-1);
+    }
+    
+    params_vec += contest_parameters { dirnames[0] + " " + cl.value("-start") + " " + cl.value("-hrs") };
+  }
 
-  for (const string& dirname : dirnames)
-  { if (!directory_exists(dirname, LINKS::INCLUDE))
-    { cerr << "ERROR: raw directory " << dirname << " does not exist" << endl;
+  for (const auto& cp : params_vec)
+  { if (!directory_exists(cp.directory(), LINKS::INCLUDE))
+    { cerr << "ERROR: raw directory " << cp.directory() << " does not exist" << endl;
       exit(-1);
     }
   }
@@ -156,9 +178,9 @@ int main(int argc, char** argv)
   list<future<CALL_MAP>> futures;
  
 // queue all the directories for processing, as resources become available 
-  for (const string& dirname : dirnames)
+  for (const contest_parameters& cp : params_vec)
   { if (verbose)
-      cout << "queuing directory " << dirname << " for processing when a thread becomes free" << endl;
+      cout << "queuing directory " << cp.directory() << " for processing when a thread becomes free" << endl;
   
     while (processing_directories == MAX_PARALLEL)
     { for (auto it { futures.begin() }; it != futures.end(); ++it)
@@ -175,10 +197,10 @@ int main(int argc, char** argv)
       this_thread::sleep_for(1s);
     }
     
-    futures.emplace(futures.end(), async(std::launch::async, process_directory, dirname));
+    futures.emplace(futures.end(), async(std::launch::async, process_directory, cp));
     
     if (verbose)
-      cout << "started processing directory " << dirname << endl;
+      cout << "started processing directory " << cp.directory() << endl;
     
     processing_directories++;
   }
@@ -334,20 +356,20 @@ unordered_set<string> tcalls(const unordered_map<string /* tcall */, vector<smal
     \param  vec     chronologically-sorted QSO vector
     \return         map that converts from time (for each minute) to the iterator for the first element of <i>vec</i>for that minute
 */
-vector<vector<small_qso>::const_iterator> time_map(const vector<small_qso>& vec, const int max_time_range)
+vector<vector<small_qso>::const_iterator> time_map(const vector<small_qso>& vec, const int max_rel_mins)
 { vector<vector<small_qso>::const_iterator> rv;
 
   if (vec.empty())                  // should never be true
     return rv;
   
-  const int time_map_size { max_time_range + 1 };   // note the +1
+  const int time_map_size { static_cast<int>(max_rel_mins) + 1 };   // note the +1
   
   rv.reserve(time_map_size);
 
   vector<small_qso>::const_iterator last_start { vec.cbegin() };
 
-  for (int minutes { 0 }; minutes < max_time_range; ++minutes)
-  { rv += lower_bound(last_start, vec.end(), minutes, [] (const auto& element, const auto& target) { return (element.time() < target); });
+  for (long int minutes { 0 }; minutes <= max_rel_mins; ++minutes)
+  { rv += lower_bound(last_start, vec.end(), minutes, [] (const auto& element, const auto& target) { return (element.rel_mins() < target); });
     last_start = rv[rv.size() - 1];
   }
     
@@ -360,15 +382,15 @@ vector<vector<small_qso>::const_iterator> time_map(const vector<small_qso>& vec,
     \param  pruned_qsos_this_band       the pruned QSOs (for a band)
     \param  all_qsos_this_band          all the QSOs (for the band)
     \param  calls_with_no_freq_info     the calls that have no reliable frequency info in the log
-    \param  scp_calls                   the current list of SCP calls
+    \param  calls_with_poor_freq_info
+    \param  max_rel_mins                the number of minutes in the contest - 1
     \return                             the SCP calls after adding those from the containers
 */
 unordered_set<string> process_band(const unordered_map<string /* tcall */, vector<small_qso>>& pruned_qsos_this_band,
                                    const unordered_map<string /* tcall */, vector<small_qso>>& all_qsos_this_band,
                                    const unordered_set<string>& calls_with_no_freq_info,
                                    const unordered_set<string>& calls_with_poor_freq_info,
-                                   const int max_time_range/*,
-                                   const unordered_set<string>& scp_calls*/)
+                                   const int max_rel_mins)
 { 
 // put all the qsos on this band, and all the pruned qsos, into vectors
   vector<small_qso> pruned_vec { build_vec(pruned_qsos_this_band) };
@@ -399,21 +421,18 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
 // look for specific QSO busts, where the frequency and time in two logs match, and an rcall is a bust of a tcall
   unordered_set<int> ids_to_remove;
   
-  const time_t minimum_minutes { pruned_vec[0].time() };                       // minimum time in this log
-  const time_t maximum_minutes { pruned_vec[pruned_vec.size() - 1].time() };   // maximum time in this log
-
 // go through the pruned log, minute by minute; start by building maps from times to vector elements
-  const vector<vector<small_qso>::const_iterator> all_time_map    { time_map(all_vec, max_time_range) };
-  const vector<vector<small_qso>::const_iterator> pruned_time_map { time_map(pruned_vec, max_time_range) };
+  const vector<vector<small_qso>::const_iterator> all_time_map    { time_map(all_vec, max_rel_mins) };
+  const vector<vector<small_qso>::const_iterator> pruned_time_map { time_map(pruned_vec, max_rel_mins) };
   
-  for (time_t target_minutes { minimum_minutes }; target_minutes <= maximum_minutes; ++target_minutes)
-  { const time_t lower_target_minutes { max(target_minutes - CLOCK_SKEW, minimum_minutes) };
-    const time_t upper_target_minutes { min(target_minutes + CLOCK_SKEW, maximum_minutes) };
+  for (int target_rel_mins { 0 }; target_rel_mins <= max_rel_mins; ++target_rel_mins)
+  { const time_t lower_target_minutes { max(target_rel_mins - CLOCK_SKEW, 0) };
+    const time_t upper_target_minutes { min(target_rel_mins + CLOCK_SKEW, max_rel_mins) };
 
 // create vector of (pruned) rcalls that are targets for this exact minute
     vector<small_qso> pruned_rcall_targets;
 
-    copy(pruned_time_map.at(target_minutes), pruned_time_map.at(target_minutes + 1), back_inserter(pruned_rcall_targets));     // these are all the pruned rcalls during the target minute
+    copy(pruned_time_map.at(target_rel_mins), pruned_time_map.at(target_rel_mins + 1), back_inserter(pruned_rcall_targets));     // these are all the pruned rcalls during the target minute
     
 // look for matches
     for (const small_qso& rqso : pruned_rcall_targets)
@@ -472,8 +491,8 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
     { for (const auto& tcall : all_tcalls)
       { if (!ids_to_remove.contains(qso.id()))      // don't keep going once we know to remove it
         { if (is_bust(tcall, qso.rcall()))
-          { const bool running { is_stn_running(tcall, qso.time(), qso.qrg(), all_tcalls, calls_with_no_freq_info, calls_with_poor_freq_info, all_qsos_this_band, all_vec,
-                                 all_time_map, minimum_minutes, maximum_minutes, qso.tcall()) };
+          { const bool running { is_stn_running(tcall, qso.rel_mins(), qso.qrg(), all_tcalls, calls_with_no_freq_info, calls_with_poor_freq_info, all_qsos_this_band, all_vec,
+                                 all_time_map, 0, max_rel_mins, qso.tcall()) };
            
             if (running)
             { ids_to_remove += qso.id();
@@ -599,16 +618,16 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
       { if (tracing and (rcall == traced_call))
           cout << band_str << ": testing whether QSO is in a run: " << rqso << endl;
 
-        const auto [ lb, ub ] { get_bounds(rqso.time(), minimum_minutes, maximum_minutes, RUN_TIME_RANGE, log_of_rcall_and_busts) };
-
-        if (verbose or (tracing and (rcall == traced_call)))
-        { const time_t target_minutes       { rqso.time() };
-          const time_t lower_target_minutes { max(target_minutes - RUN_TIME_RANGE, minimum_minutes) };
-          const time_t upper_target_minutes { min(target_minutes + RUN_TIME_RANGE, maximum_minutes) }; 
-          const time_t low_time             { lb->time() };
-          const time_t high_time            { prev(ub)->time() }; 
+        const auto [ lb, ub ] { get_bounds(rqso.rel_mins(), 0, max_rel_mins, RUN_TIME_RANGE, log_of_rcall_and_busts) };
         
-          cout << band_str << ": time range: " << low_time << " to " << high_time
+        if (verbose or (tracing and (rcall == traced_call)))
+        { const int target_minutes       { rqso.rel_mins() };
+          const int lower_target_minutes { max(target_minutes - RUN_TIME_RANGE, 0) };
+          const int upper_target_minutes { min(target_minutes + RUN_TIME_RANGE, max_rel_mins) }; 
+          const int low_rel_mins         { lb->rel_mins() };
+          const int high_rel_mins        { prev(ub)->rel_mins() }; 
+        
+          cout << band_str << ": time range: " << low_rel_mins << " to " << high_rel_mins
                << " for target time = " << target_minutes << "; lower target = " << lower_target_minutes << ", upper target = " << upper_target_minutes << endl;
         }
 
@@ -683,15 +702,18 @@ unordered_set<string> process_band(const unordered_map<string /* tcall */, vecto
   return local_scp_calls;
 }
 
-/*! \brief              Process all the logs in a directory
-    \param  dirname     the name of the directory to process
-    \return             the SCP calls for the logs in directory <i>dirname </i>
+/*! \brief      Process all the logs in a directory
+    \param  cp  directory, start and duration
+    \return     the SCP calls for the logs in directory <i>dirname </i>
 */
-CALL_MAP process_directory(const string& dirname)
-{ unordered_set<string>                                scp_calls;               // the calls in the SCP list
+CALL_MAP process_directory(const contest_parameters& cp)
+{ const string& dirname { cp.directory() };
+
+  unordered_set<string>                                scp_calls;               // the calls in the SCP list
   unordered_map<string /* tcall */, vector<small_qso>> all_qsos;                // all QSOs as recorded in the logs
   unordered_map<string /* tcall */, vector<small_qso>> pruned_qsos;             // some QSOs removed, removing more as we go along
   int                                                  n_valid_logs    { 0 };
+  int                                                  max_rel_mins    { cp.hours() * 60 - 1 };   // maximum legal value
 
   const string_view legal_chars { "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890/"sv };  // all the chars that are legal in callsigns
   
@@ -703,7 +725,12 @@ CALL_MAP process_directory(const string& dirname)
     for (const auto line : to_lines_sv(prepared_content))       // a rather minor improvement in efficientcy
     { if (line.starts_with("QSO:"sv))
       { small_qso qso { line };
-      
+ 
+        if (!cp.in_contest_period(qso.time()))
+          continue;
+        
+        qso.rel_mins( (qso.time() - cp.t_start()) / 60 );       // minutes since the start of the contest
+        
         if (!qso.tcall().empty())                               // if we successfully constructed a valid QSO
         { qso.tcall(remove_from_end(qso.tcall(), "/QRP"s));     // obviously
           qso.rcall(remove_from_end(qso.rcall(), "/QRP"s));     //    do.
@@ -761,10 +788,10 @@ CALL_MAP process_directory(const string& dirname)
   for (auto& [tcall, qsos] : all_qsos)
     SORT(qsos);
 
-  const int max_time_range { remove_qsos_outside_contest_period(all_qsos) };
+  const int max_time_range { cp.hours() * 60 };   // number of minutes in the contest    
 
   if (verbose)
-    cout << dirname << ": max time range = " << max_time_range << endl;
+    cout << dirname << ": minutes in contest = " << max_time_range << endl;
 
 // start with the pruned QSOs being identical to all_qsos
   pruned_qsos = all_qsos;
@@ -842,9 +869,10 @@ CALL_MAP process_directory(const string& dirname)
   vector<unordered_set<string>>         out_calls;
 
   for (const HF_BAND this_band : vector { HF_BAND::B160, HF_BAND::B80, HF_BAND::B40, HF_BAND::B20, HF_BAND::B15, HF_BAND::B10 } )
+//  for (const HF_BAND this_band : vector { HF_BAND::B160 } )
     if (pruned_per_band_qsos.contains(this_band) and all_per_band_qsos.contains(this_band))                         // not every contest permits every band
       futures.emplace_back(async(std::launch::async, process_band, ref(pruned_per_band_qsos.at(this_band)), ref(all_per_band_qsos.at(this_band)), ref(calls_with_no_freq_info), 
-                                                                   ref(calls_with_poor_freq_info), max_time_range));
+                                                                   ref(calls_with_poor_freq_info), max_rel_mins));
   
   for (int n { 0 }; n < ssize(futures); ++n)
     out_calls += move(futures[n].get());
@@ -898,7 +926,7 @@ unordered_set<string> calls_with_unreliable_freq(const unordered_map<string /* t
       
         if (!calls_with_no_freq_info.contains(rcall))               // neither tcall nor rcall may be a call with no frequency info
           if (all_qsos.find(rcall) != all_qsos.cend())              // rcall is a tcall in the map
-            worked_by_this_tcall[rcall] += BAND_TIME_FREQ { band_from_qrg(qso.qrg()), qso.time(), qso.qrg() };
+            worked_by_this_tcall[rcall] += BAND_TIME_FREQ { band_from_qrg(qso.qrg()), qso.rel_mins(), qso.qrg() };
       }
     
       worked[tcall] = move(worked_by_this_tcall);
@@ -977,15 +1005,12 @@ HF_BAND band_from_qrg(const int qrg)
   if ((qrg >= 28000) and (qrg <= 29700))
     return HF_BAND::B10;
       
-//  cerr << "ERROR: invalid frequency: " << qrg << endl;
-//  exit(-1);
-//  cerr << "ERROR: invalid frequency: " << qrg << endl;
   throw exception();
 }
 
 /*! \brief                              Determine whether a station is running at a particular time and on a particular frequency
     \param  call                        call of the target station
-    \param  time                        target time
+    \param  rel_mins                    target relative minutes
     \param  qrg                         target frequency, in kHz
     \param  tcalls                      all the entrants
     \param  calls_with_no_freq_info     entrants whose logged frequency information is useless
@@ -998,14 +1023,14 @@ HF_BAND band_from_qrg(const int qrg)
     \param  ignore_call                 ignore this call in the logs (typically the call of the station that reported working <i>call</i> at this time and frequency)
     \return                             whether <i>call</i> appears to have been running at time <i>time</i> on frequency <i>qrg</i>
 */
-bool is_stn_running(const string& call, const int time, const int qrg, const unordered_set<string>& tcalls, const unordered_set<string>& calls_with_no_freq_info,
+bool is_stn_running(const string& call, const int rel_mins, const int qrg, const unordered_set<string>& tcalls, const unordered_set<string>& calls_with_no_freq_info,
                       const unordered_set<string>& calls_with_poor_freq_info, const unordered_map<string /* tcall */, vector<small_qso>>& all_qsos_this_band, const vector<small_qso>& all_vec,
                       const vector<vector<small_qso>::const_iterator>& all_time_map, const int minimum_minutes, const int maximum_minutes,
                       const string& ignore_call)
 { if (!tcalls.contains(call))        // is it a valid entrant call?
     return false;
 
-  const int target_minutes { time };
+  const int target_minutes { rel_mins };
   
   if (call_has_good_freq_info(call, calls_with_no_freq_info, calls_with_poor_freq_info))            // call has good frequency info
   { const auto [lb, ub] { get_bounds(target_minutes, minimum_minutes, maximum_minutes, CLOCK_SKEW, all_qsos_this_band.at(call)) };
@@ -1016,7 +1041,7 @@ bool is_stn_running(const string& call, const int time, const int qrg, const uno
 // can't trust call's frequency information; does someone else say that they have worked him here?
   const int lower_target_minutes { max(target_minutes - CLOCK_SKEW, minimum_minutes) };
   const int upper_target_minutes { min(target_minutes + CLOCK_SKEW, maximum_minutes) };
-    
+  
   return ANY_OF(all_time_map.at(lower_target_minutes), all_time_map.at(upper_target_minutes + 1),
                  [qrg, &call, &ignore_call] (const small_qso& qso) { return (qso.tcall() != ignore_call) and (qso.rcall() == call) and (abs(qrg - qso.qrg()) <= FREQ_SKEW); });
 }
@@ -1033,91 +1058,8 @@ pair<vector<small_qso>::const_iterator, vector<small_qso>::const_iterator> get_b
                                                                                       const int ALLOWED_SKEW, const vector<small_qso>& vec)
 { const int  lower_target_minutes { max(target_minutes - ALLOWED_SKEW, minimum_minutes) };
   const int  upper_target_minutes { min(target_minutes + ALLOWED_SKEW, maximum_minutes) };
-  const auto lb                   { lower_bound(vec.cbegin(), vec.cend(), lower_target_minutes, [] (const auto& element, const auto& target) { return (element.time() < target); }) };
-  const auto ub                   { upper_bound(lb, vec.cend(), upper_target_minutes, [] (const auto& target, const auto& element) { return (target < element.time()); }) }; 
+  const auto lb                   { lower_bound(vec.cbegin(), vec.cend(), lower_target_minutes, [] (const auto& element, const auto& target) { return (element.rel_mins() < target); }) };
+  const auto ub                   { upper_bound(lb, vec.cend(), upper_target_minutes, [] (const auto& target, const auto& element) { return (target < element.rel_mins()); }) }; 
   
   return pair { lb, ub };
-}
-
-/*! \brief              Remove all QSOs whose date/time appears to put them outside the contest period
-    \param  all_qsos    all the logs to be checked
-    \return             the deduced number of minutes in the contest
-    
-    The parameter <i>all_qsos</i> is altered by the removal of all the QSOs that appear to be
-    outside the derived contest period.
-    
-    The times of the QSOs in <i>all_logs</i> are altered so as to be in minutes from the derived
-    start of the contest.
-*/
-int remove_qsos_outside_contest_period(unordered_map<string /* tcall */, vector<small_qso>>& all_qsos)
-{ int time_range     { };           // number of minutes for which the logs contain QSOs
-  int MAX_TIME_RANGE { 2880 };      // start by assuming that the contest is for two days
-  
-  do
-  {
-// convert all times to to relative minutes, just for human consumption
-    time_t min_minutes { numeric_limits<time_t>::max() };
-    time_t max_minutes { 0 };                                // not really needed, except if verbose
-
-// get the global minimum and maximum time
-    for (auto& [tcall, qsos] : all_qsos)
-    { min_minutes = min(min_minutes, qsos[0].time());
-      max_minutes = max(max_minutes, qsos.at(qsos.size() - 1).time());
-    }
-
-    for (auto& [tcall, qsos] : all_qsos)
-      FOR_ALL(qsos, [min_minutes] (small_qso& qso) { qso.time(qso.time() - min_minutes); } );
-
-    time_range = max_minutes - min_minutes + 1;
-
-    if (time_range < 2500)      // assume one day if not two days; change this if contests with weird durations are added
-    { MAX_TIME_RANGE = 1800;    // 30 hours; e.g. REF
-    
-      if (time_range < 1700)
-        MAX_TIME_RANGE = 1440;
-    }
-  
-    if (time_range > MAX_TIME_RANGE)
-    { int n_at_minimum { 0 };
-      int n_at_maximum { 0 };
-      
-      CALL_SET min_logs(compare_calls);
-      CALL_SET max_logs(compare_calls);
-      
-      for (auto& [tcall, qsos] : all_qsos)
-      { if (qsos[0].time() == 0)
-        { n_at_minimum++;
-          min_logs += tcall;
-        }
-          
-        if (qsos[qsos.size() - 1].time() == (max_minutes - min_minutes))
-        { n_at_maximum ++;
-          max_logs += tcall;
-        }
-      }
-    
-      const bool remove_min { (n_at_minimum < n_at_maximum) };        // remove min or remove max QSOs?
-      const bool remove_max { !remove_min };
- 
-// remove QSOs from either the start or the end   
-      for ( const string& tcall : (remove_min ? min_logs : max_logs) )
-      { unordered_set<int> ids_to_remove { };
-      
-        FOR_ALL(all_qsos[tcall], [max_minutes, min_minutes, remove_max, remove_min, &ids_to_remove] (const small_qso& qso)
-                                   { if ( remove_min and (qso.time() == 0) )
-                                       ids_to_remove += qso.id();
-                                                             
-                                     if ( remove_max and (qso.time() == (max_minutes - min_minutes)) )
-                                       ids_to_remove += qso.id();
-                                   });
-      
-        erase_if( all_qsos[tcall], [&ids_to_remove] (const small_qso& qso) { return ids_to_remove.contains(qso.id()); } );
-      
-        if (all_qsos[tcall].empty())    // remove a log if it's now empty (which is highly unlikely -- unless the date/time info is completely borked)
-          all_qsos -= tcall;
-      }
-    }
-  } while (time_range > MAX_TIME_RANGE);
-  
-  return MAX_TIME_RANGE;
 }
