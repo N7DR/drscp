@@ -732,13 +732,27 @@ CALL_MAP process_directory(const contest_parameters& cp)
         qso.rel_mins( (qso.time() - cp.t_start()) / 60 );       // minutes since the start of the contest
         
         if (!qso.tcall().empty())                               // if we successfully constructed a valid QSO
-        { qso.tcall(remove_from_end(qso.tcall(), "/QRP"s));     // obviously
+        { const string_view qt     { qso.tcall() };
+          const string_view qr     { qso.rcall() };
+          const char        tfirst { qt[0] };
+          const char        rfirst { qr[0] };
+          
+          if ( (tfirst == '/') or (rfirst == '/') or
+               (tfirst == 'Q') or (rfirst == 'Q') or
+               (tfirst == '0') or (rfirst == '0') or
+               (tfirst == '1') or (rfirst == '1') )
+            continue;
+
+          const char tlast  { qt[qt.size() - 1] };
+          const char rlast  { qr[qr.size() - 1] };
+          
+          if ( (tlast== '/') or (rlast == '/') )
+            continue;            
+          
+          qso.tcall(remove_from_end(qso.tcall(), "/QRP"s));     // obviously
           qso.rcall(remove_from_end(qso.rcall(), "/QRP"s));     //    do.
           qso.tcall(remove_from_end(qso.tcall(), "/QRPP"s));    // yup... some people do this
           qso.rcall(remove_from_end(qso.rcall(), "/QRPP"s));
-
-          const string_view qt { qso.tcall() };
-          const string_view qr { qso.rcall() };
         
           if ((qt.size() < 3) or (qr.size() < 3))
             continue;
@@ -746,7 +760,7 @@ CALL_MAP process_directory(const contest_parameters& cp)
           if ( (qt.find_first_not_of(legal_chars) != string::npos) or (qr.find_first_not_of(legal_chars) != string::npos) )
             continue;
           
-          if (qso.tcall() == qso.rcall())                     // some people "work themselves" to mark bad QSOs but to keep serial numbers intact
+          if (qt == qr)                     // some people "work themselves" to mark bad QSOs but to keep serial numbers intact
             continue;
  
           if (tracing and (qso.rcall() == traced_call))
