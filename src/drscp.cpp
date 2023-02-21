@@ -732,10 +732,10 @@ CALL_MAP process_directory(const contest_parameters& cp)
         qso.rel_mins( (qso.time() - cp.t_start()) / 60 );       // minutes since the start of the contest
         
         if (!qso.tcall().empty())                               // if we successfully constructed a valid QSO
-        { const string_view qt     { qso.tcall() };
-          const string_view qr     { qso.rcall() };
-          const char        tfirst { qt[0] };
-          const char        rfirst { qr[0] };
+        { const string qt     { qso.tcall() };
+          const string qr     { qso.rcall() };
+          const char   tfirst { qt[0] };
+          const char   rfirst { qr[0] };
           
           if ( (tfirst == '/') or (rfirst == '/') or
                (tfirst == 'Q') or (rfirst == 'Q') or
