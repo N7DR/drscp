@@ -1,6 +1,3 @@
-
-    Program to generate custom SCP (super check partial) files
-    
     Program to generate custom SCP (super check partial) files
     
     drscp -dir <directory of contest logs> [-start <start date/time>] [-hrs <duration in hours>]
