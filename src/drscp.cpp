@@ -739,8 +739,7 @@ CALL_MAP process_directory(const contest_parameters& cp)
           
           if ( (tfirst == '/') or (rfirst == '/') or
                (tfirst == 'Q') or (rfirst == 'Q') or
-               (tfirst == '0') or (rfirst == '0') or
-               (tfirst == '1') or (rfirst == '1') )
+               (tfirst == '0') or (rfirst == '0') )
             continue;
 
           const char tlast  { qt[qt.size() - 1] };
